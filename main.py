@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -8,8 +9,8 @@ import os
 
 # Modelos de datos
 class Student(BaseModel):
-    matricula: str = Field(..., description="Matrícula del estudiante", min_length=1)
-    nombre: str = Field(..., description="Nombre completo del estudiante", min_length=1)
+    matricula: str = Field(..., description="Matrícula del estudiante")
+    nombre: str = Field(..., description="Nombre completo del estudiante")
     created_at: datetime = Field(default_factory=datetime.now)
 
 class StudentUpdate(BaseModel):
