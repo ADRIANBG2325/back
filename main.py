@@ -5,7 +5,13 @@ import os
 
 # Crear app Flask
 app = Flask(__name__)
-CORS(app)
+
+# Configurar CORS de manera más específica
+CORS(app, 
+     origins=["*"],  # Permitir todos los orígenes
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+     allow_headers=["Content-Type", "Authorization", "Accept"],
+     supports_credentials=True)
 
 # Base de datos en memoria
 students_db = {}
@@ -24,6 +30,23 @@ initial_students = [
 for student in initial_students:
     students_db[student["matricula"]] = student
 
+# Manejar preflight requests
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = jsonify()
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add('Access-Control-Allow-Headers', "*")
+        response.headers.add('Access-Control-Allow-Methods', "*")
+        return response
+
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,Accept')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
+
 @app.route("/", methods=["GET"])
 def root():
     return jsonify({
@@ -32,7 +55,8 @@ def root():
         "status": "✅ Funcionando correctamente",
         "estudiantes_registrados": len(students_db),
         "registros_asistencia": len(attendance_db),
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        "cors": "✅ CORS Configurado"
     })
 
 @app.route("/health", methods=["GET"])
@@ -41,7 +65,8 @@ def health_check():
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "message": "API funcionando correctamente",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "cors": "enabled"
     })
 
 # ESTUDIANTES
@@ -204,4 +229,6 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     print("🚀 Iniciando API Flask...")
     print(f"📡 Puerto: {port}")
+    print("🌐 CORS configurado para todos los orígenes")
     app.run(host="0.0.0.0", port=port, debug=False)
+
