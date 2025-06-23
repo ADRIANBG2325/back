@@ -6,12 +6,19 @@ import os
 # Crear app Flask
 app = Flask(__name__)
 
-# Configurar CORS de manera más específica
+# Configurar CORS específicamente para Vercel
 CORS(app, 
-     origins=["*"],  # Permitir todos los orígenes
+     origins=[
+         "https://fronted-ten-omega.vercel.app",  # Tu dominio específico
+         "https://*.vercel.app",  # Todos los subdominios de Vercel
+         "http://localhost:3000",  # Para desarrollo local
+         "http://localhost:3001",
+         "*"  # Fallback para todos los orígenes
+     ],
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-     allow_headers=["Content-Type", "Authorization", "Accept"],
-     supports_credentials=True)
+     allow_headers=["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
+     supports_credentials=False,
+     expose_headers=["Content-Type", "Authorization"])
 
 # Base de datos en memoria
 students_db = {}
@@ -30,22 +37,32 @@ initial_students = [
 for student in initial_students:
     students_db[student["matricula"]] = student
 
-# Manejar preflight requests
+# Headers CORS manuales para mayor compatibilidad
+@app.after_request
+def after_request(response):
+    origin = request.headers.get('Origin')
+    if origin:
+        response.headers['Access-Control-Allow-Origin'] = origin
+    else:
+        response.headers['Access-Control-Allow-Origin'] = '*'
+    
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, Origin, X-Requested-With'
+    response.headers['Access-Control-Max-Age'] = '3600'
+    return response
+
 @app.before_request
 def handle_preflight():
     if request.method == "OPTIONS":
-        response = jsonify()
-        response.headers.add("Access-Control-Allow-Origin", "*")
-        response.headers.add('Access-Control-Allow-Headers', "*")
-        response.headers.add('Access-Control-Allow-Methods', "*")
+        response = jsonify({'status': 'OK'})
+        origin = request.headers.get('Origin')
+        if origin:
+            response.headers['Access-Control-Allow-Origin'] = origin
+        else:
+            response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, Accept, Origin, X-Requested-With'
         return response
-
-@app.after_request
-def after_request(response):
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,Accept')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
-    return response
 
 @app.route("/", methods=["GET"])
 def root():
@@ -56,7 +73,8 @@ def root():
         "estudiantes_registrados": len(students_db),
         "registros_asistencia": len(attendance_db),
         "timestamp": datetime.now().isoformat(),
-        "cors": "✅ CORS Configurado"
+        "cors": "✅ CORS Configurado para Vercel",
+        "origin": request.headers.get('Origin', 'No origin header')
     })
 
 @app.route("/health", methods=["GET"])
@@ -66,7 +84,9 @@ def health_check():
         "timestamp": datetime.now().isoformat(),
         "message": "API funcionando correctamente",
         "version": "1.0.0",
-        "cors": "enabled"
+        "cors": "enabled",
+        "origin": request.headers.get('Origin', 'No origin header'),
+        "user_agent": request.headers.get('User-Agent', 'No user agent')
     })
 
 # ESTUDIANTES
@@ -229,6 +249,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     print("🚀 Iniciando API Flask...")
     print(f"📡 Puerto: {port}")
-    print("🌐 CORS configurado para todos los orígenes")
+    print("🌐 CORS configurado específicamente para Vercel")
+    print("🔗 Dominios permitidos: fronted-ten-omega.vercel.app, *.vercel.app")
     app.run(host="0.0.0.0", port=port, debug=False)
 
