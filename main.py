@@ -1,41 +1,11 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Optional, Dict
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 from datetime import datetime, date
 import os
-import json
 
-# Modelos básicos
-class Student(BaseModel):
-    matricula: str
-    nombre: str
-    created_at: str = ""
-    
-    def __init__(self, **data):
-        if not data.get('created_at'):
-            data['created_at'] = datetime.now().isoformat()
-        super().__init__(**data)
-
-class StudentUpdate(BaseModel):
-    nombre: Optional[str] = None
-
-class AttendanceRequest(BaseModel):
-    matricula: str
-    status: str = "presente"
-    observaciones: Optional[str] = None
-
-# App FastAPI
-app = FastAPI(title="Sistema de Pase de Lista API", version="1.0.0")
-
-# CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Crear app Flask
+app = Flask(__name__)
+CORS(app)
 
 # Base de datos en memoria
 students_db = {}
@@ -43,71 +13,83 @@ attendance_db = []
 
 # Datos iniciales
 initial_students = [
-    {"matricula": "2024001", "nombre": "Ana García López"},
-    {"matricula": "2024002", "nombre": "Carlos Rodríguez Martín"},
-    {"matricula": "2024003", "nombre": "María Fernández Silva"},
-    {"matricula": "2024004", "nombre": "José Luis Hernández"},
-    {"matricula": "2024005", "nombre": "Laura Martínez Ruiz"},
+    {"matricula": "2024001", "nombre": "Ana García López", "created_at": datetime.now().isoformat()},
+    {"matricula": "2024002", "nombre": "Carlos Rodríguez Martín", "created_at": datetime.now().isoformat()},
+    {"matricula": "2024003", "nombre": "María Fernández Silva", "created_at": datetime.now().isoformat()},
+    {"matricula": "2024004", "nombre": "José Luis Hernández", "created_at": datetime.now().isoformat()},
+    {"matricula": "2024005", "nombre": "Laura Martínez Ruiz", "created_at": datetime.now().isoformat()},
 ]
 
 # Inicializar datos
-for student_data in initial_students:
-    student = Student(**student_data)
-    students_db[student.matricula] = student.dict()
+for student in initial_students:
+    students_db[student["matricula"]] = student
 
-@app.get("/")
+@app.route("/", methods=["GET"])
 def root():
-    return {
+    return jsonify({
         "mensaje": "🎓 Sistema de Pase de Lista API",
         "version": "1.0.0",
         "status": "✅ Funcionando correctamente",
         "estudiantes_registrados": len(students_db),
         "registros_asistencia": len(attendance_db),
         "timestamp": datetime.now().isoformat()
-    }
+    })
 
-@app.get("/health")
+@app.route("/health", methods=["GET"])
 def health_check():
-    return {
+    return jsonify({
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "message": "API funcionando correctamente",
         "version": "1.0.0"
-    }
+    })
 
 # ESTUDIANTES
-@app.get("/students")
+@app.route("/students", methods=["GET"])
 def get_all_students():
-    return list(students_db.values())
+    return jsonify(list(students_db.values()))
 
-@app.get("/students/{matricula}")
-def get_student(matricula: str):
+@app.route("/students/<matricula>", methods=["GET"])
+def get_student(matricula):
     if matricula not in students_db:
-        raise HTTPException(status_code=404, detail="Estudiante no encontrado")
-    return students_db[matricula]
+        return jsonify({"detail": "Estudiante no encontrado"}), 404
+    return jsonify(students_db[matricula])
 
-@app.post("/students")
-def add_student(student: Student):
-    if student.matricula in students_db:
-        raise HTTPException(status_code=400, detail="La matrícula ya existe")
+@app.route("/students", methods=["POST"])
+def add_student():
+    data = request.get_json()
     
-    students_db[student.matricula] = student.dict()
-    return student.dict()
+    if not data or not data.get("matricula") or not data.get("nombre"):
+        return jsonify({"detail": "Matrícula y nombre son requeridos"}), 400
+    
+    matricula = data["matricula"]
+    if matricula in students_db:
+        return jsonify({"detail": "La matrícula ya existe"}), 400
+    
+    student = {
+        "matricula": matricula,
+        "nombre": data["nombre"],
+        "created_at": datetime.now().isoformat()
+    }
+    
+    students_db[matricula] = student
+    return jsonify(student)
 
-@app.put("/students/{matricula}")
-def update_student(matricula: str, student_update: StudentUpdate):
+@app.route("/students/<matricula>", methods=["PUT"])
+def update_student(matricula):
     if matricula not in students_db:
-        raise HTTPException(status_code=404, detail="Estudiante no encontrado")
+        return jsonify({"detail": "Estudiante no encontrado"}), 404
     
-    if student_update.nombre:
-        students_db[matricula]["nombre"] = student_update.nombre
+    data = request.get_json()
+    if data and data.get("nombre"):
+        students_db[matricula]["nombre"] = data["nombre"]
     
-    return students_db[matricula]
+    return jsonify(students_db[matricula])
 
-@app.delete("/students/{matricula}")
-def delete_student(matricula: str):
+@app.route("/students/<matricula>", methods=["DELETE"])
+def delete_student(matricula):
     if matricula not in students_db:
-        raise HTTPException(status_code=404, detail="Estudiante no encontrado")
+        return jsonify({"detail": "Estudiante no encontrado"}), 404
     
     deleted_student = students_db.pop(matricula)
     
@@ -115,62 +97,73 @@ def delete_student(matricula: str):
     global attendance_db
     attendance_db = [record for record in attendance_db if record["matricula"] != matricula]
     
-    return {
+    return jsonify({
         "mensaje": f"Estudiante {deleted_student['nombre']} eliminado exitosamente",
         "estudiante": deleted_student
-    }
+    })
 
 # ASISTENCIA
-@app.post("/attendance")
-def mark_attendance(attendance: AttendanceRequest):
-    if attendance.matricula not in students_db:
-        raise HTTPException(status_code=404, detail="Estudiante no encontrado")
+@app.route("/attendance", methods=["POST"])
+def mark_attendance():
+    data = request.get_json()
     
-    student = students_db[attendance.matricula]
+    if not data or not data.get("matricula"):
+        return jsonify({"detail": "Matrícula es requerida"}), 400
+    
+    matricula = data["matricula"]
+    if matricula not in students_db:
+        return jsonify({"detail": "Estudiante no encontrado"}), 404
+    
+    student = students_db[matricula]
     today = date.today().isoformat()
     now = datetime.now().isoformat()
+    status = data.get("status", "presente")
+    observaciones = data.get("observaciones")
     
     # Buscar registro existente
-    existing_record = None
+    existing_index = None
     for i, record in enumerate(attendance_db):
-        if record["matricula"] == attendance.matricula and record["fecha"] == today:
-            existing_record = i
+        if record["matricula"] == matricula and record["fecha"] == today:
+            existing_index = i
             break
     
     record_data = {
-        "matricula": attendance.matricula,
+        "matricula": matricula,
         "nombre": student["nombre"],
-        "status": attendance.status,
+        "status": status,
         "fecha": today,
         "hora": now,
-        "observaciones": attendance.observaciones
+        "observaciones": observaciones
     }
     
-    if existing_record is not None:
-        attendance_db[existing_record] = record_data
+    if existing_index is not None:
+        attendance_db[existing_index] = record_data
     else:
         attendance_db.append(record_data)
     
-    return record_data
+    return jsonify(record_data)
 
-@app.get("/attendance/today")
+@app.route("/attendance/today", methods=["GET"])
 def get_today_attendance():
     today = date.today().isoformat()
-    return [record for record in attendance_db if record["fecha"] == today]
+    today_records = [record for record in attendance_db if record["fecha"] == today]
+    return jsonify(today_records)
 
-@app.get("/attendance/date/{fecha}")
-def get_attendance_by_date(fecha: str):
-    return [record for record in attendance_db if record["fecha"] == fecha]
+@app.route("/attendance/date/<fecha>", methods=["GET"])
+def get_attendance_by_date(fecha):
+    date_records = [record for record in attendance_db if record["fecha"] == fecha]
+    return jsonify(date_records)
 
-@app.get("/attendance/student/{matricula}")
-def get_student_attendance(matricula: str):
+@app.route("/attendance/student/<matricula>", methods=["GET"])
+def get_student_attendance(matricula):
     if matricula not in students_db:
-        raise HTTPException(status_code=404, detail="Estudiante no encontrado")
+        return jsonify({"detail": "Estudiante no encontrado"}), 404
     
-    return [record for record in attendance_db if record["matricula"] == matricula]
+    student_records = [record for record in attendance_db if record["matricula"] == matricula]
+    return jsonify(student_records)
 
 # REPORTES
-@app.get("/reports/stats/today")
+@app.route("/reports/stats/today", methods=["GET"])
 def get_today_stats():
     today = date.today().isoformat()
     today_records = [record for record in attendance_db if record["fecha"] == today]
@@ -182,15 +175,15 @@ def get_today_stats():
     
     porcentaje_asistencia = (presentes / total_estudiantes * 100) if total_estudiantes > 0 else 0
     
-    return {
+    return jsonify({
         "total_estudiantes": total_estudiantes,
         "presentes": presentes,
         "ausentes": ausentes,
         "tardanzas": tardanzas,
         "porcentaje_asistencia": round(porcentaje_asistencia, 2)
-    }
+    })
 
-@app.get("/reports/missing-today")
+@app.route("/reports/missing-today", methods=["GET"])
 def get_missing_students_today():
     today = date.today().isoformat()
     today_records = [record for record in attendance_db if record["fecha"] == today]
@@ -201,15 +194,14 @@ def get_missing_students_today():
         if matricula not in attended_matriculas
     ]
     
-    return {
+    return jsonify({
         "fecha": today,
         "estudiantes_faltantes": missing_students,
         "total_faltantes": len(missing_students)
-    }
+    })
 
 if __name__ == "__main__":
-    import uvicorn
     port = int(os.environ.get("PORT", 8000))
-    print("🚀 Iniciando API...")
+    print("🚀 Iniciando API Flask...")
     print(f"📡 Puerto: {port}")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, debug=False)
